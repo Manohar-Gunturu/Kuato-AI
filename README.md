@@ -1,2 +1,2 @@
 # Kuato-AI
-A private RAG with UI
+A private RAG that runs locally using GPT-OSS model
