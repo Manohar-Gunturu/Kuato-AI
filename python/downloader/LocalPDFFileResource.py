@@ -1,14 +1,14 @@
-from pathlib import Path
-from python.downloader import Resource
 import pdfplumber
+from pathlib import Path
+from python.downloader.Resource import Resource
 
 class LocalPDFFileResource(Resource):
     def __init__(self):
         if pdfplumber is None:
             raise ImportError("pdfplumber is required. Install with: pip install pdfplumber")
 
-    def extract_text_with_pdfplumber(self, file_path):
-        """Extract text using pdfplumber (recommended for better accuracy)."""
+    @staticmethod
+    def extract_text_with_pdfplumber(file_path):
         text_content = []
         
         with pdfplumber.open(file_path) as pdf:
@@ -19,7 +19,8 @@ class LocalPDFFileResource(Resource):
         
         return '\n\n'.join(text_content)
 
-    def clean_pdf_text(self, text):
+    @staticmethod
+    def clean_pdf_text(text):
         """
         Clean extracted PDF text by removing extra whitespace and normalizing.
         
@@ -80,9 +81,9 @@ class LocalPDFFileResource(Resource):
             
             # Clean the extracted text
             cleaned_content = self.clean_pdf_text(content)
-            return (str(file_path), cleaned_content)
+            return str(file_path), cleaned_content
                 
         except Exception as e:
             # Log error but don't break the flow
             print(f"Error reading PDF file {path}: {e}")
-            return (path, "")
+            return path, ""

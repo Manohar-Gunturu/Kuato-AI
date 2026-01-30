@@ -39,7 +39,7 @@ class ResourceFactory:
             return cls._get_instance("pdf")
 
         # Treat common text/code/doc formats as text; default to text otherwise
-        if suffix in {".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".xml", ".csv", ".log"}:
+        if suffix in {".txt", ".rtf", ".md", ".py", ".js", ".html", ".css", ".json", ".xml", ".csv", ".log"}:
             return cls._get_instance("text")
 
         return cls._get_instance("text")

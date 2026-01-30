@@ -1,33 +1,22 @@
-from typing import List, Tuple, Optional
-from pathlib import Path
-from urllib.parse import urlparse
+from typing import List
 import logging
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
+from langchain_ollama import OllamaEmbeddings
 
 from python.downloader.ResourceFactory import ResourceFactory
+from python.utils.timeit import timeit
+from python.vectorstore.VectorStore import PersistentFAISSStore
 
 
 class ChatOllamaRAGPipeline:
-    """
-    Local RAG using:
-      - ResourceFactory (singletons per resource)
-      - RecursiveCharacterTextSplitter
-      - OllamaEmbeddings (e.g., nomic-embed-text)
-      - ChatOllama (e.g., llama3/mistral)
-    """
-
     def __init__(
         self,
         chunk_size: int = 1000,
-        chunk_overlap: int = 200,
-        embedding_model: str = "nomic-embed-text",
-        llm_model: str = "llama3",
-        ollama_base_url: Optional[str] = "http://localhost:11434",
+        chunk_overlap: int = 150,
+        model: str = "llama3",
     ):
         self.logger = logging.getLogger(__name__)
         if not self.logger.handlers:
@@ -40,53 +29,36 @@ class ChatOllamaRAGPipeline:
             separators=["\n\n", "\n", " ", ""],
         )
 
-        self.embeddings = OllamaEmbeddings(model=embedding_model, base_url=ollama_base_url)
-        self.llm = ChatOllama(model=llm_model, base_url=ollama_base_url, temperature=0.2)
+        self.embeddings = OllamaEmbeddings(model="embeddinggemma")
+        self.llm = ChatOllama(model=model, temperature=0.2)
+        self.vectorstore = PersistentFAISSStore(self.embeddings)
 
-        self.vectorstore: Optional[FAISS] = None
-
-    def _extract(self, inputs: List[str]) -> List[Tuple[str, str]]:
-        out: List[Tuple[str, str]] = []
-        for p in inputs:
+    @timeit
+    def build_index(self, paths: List[str]) -> None:
+        for path in paths:
             try:
-                res = ResourceFactory.get_for_path(p)
-                location, content = res.download(p)
-                if content and content.strip():
-                    out.append((location, content))
-                    self.logger.info(f"Extracted: {location}")
+                res = ResourceFactory.get_for_path(path)
+                location, content = res.download(path)
+                if content:
+                    chunks = self.text_splitter.split_text(content)
+                    documents : List[Document] = []
+                    for i, chunk in enumerate(chunks):
+                        documents.append(Document(
+                                page_content=chunk,
+                                metadata={"source": location, "chunk_index": i, "total_chunks": len(chunks)},
+                            ))
+                    self.vectorstore.add_documents(documents)
                 else:
-                    self.logger.warning(f"No content from: {p}")
+                    self.logger.warning(f"No content from: {path}")
             except Exception as e:
-                self.logger.error(f"Failed to extract {p}: {e}")
-        return out
+                self.logger.error(f"Failed to extract {path}: {e}")
 
-    def _to_documents(self, items: List[Tuple[str, str]]) -> List[Document]:
-        docs: List[Document] = []
-        for location, content in items:
-            chunks = self.text_splitter.split_text(content)
-            for i, chunk in enumerate(chunks):
-                docs.append(
-                    Document(
-                        page_content=chunk,
-                        metadata={"source": location, "chunk_index": i, "total_chunks": len(chunks)},
-                    )
-                )
-        self.logger.info(f"Created {len(docs)} chunks.")
-        return docs
-
-    def build_index(self, inputs: List[str]) -> FAISS:
-        extracted = self._extract(inputs)
-        if not extracted:
-            raise ValueError("No content extracted from inputs.")
-        docs = self._to_documents(extracted)
-        self.vectorstore = FAISS.from_documents(docs, self.embeddings)
-        self.logger.info("FAISS index built.")
-        return self.vectorstore
-
-    def answer(self, query: str, k: int = 4) -> str:
+    @timeit
+    def answer(self, query: str, num_of_documents: int = 4) -> str:
         if not self.vectorstore:
             raise RuntimeError("Vector index is not built. Call build_index() first.")
-        retriever_docs = self.vectorstore.similarity_search(query, k=k)
+        
+        retriever_docs = self.vectorstore.similarity_search(query, num_of_documents=num_of_documents)
         context = "\n\n".join(
             f"[{i+1}] Source: {d.metadata.get('source')}\n{d.page_content}"
             for i, d in enumerate(retriever_docs)
