@@ -10,7 +10,6 @@ from python.downloader.ResourceFactory import ResourceFactory
 from python.utils.timeit import timeit
 from python.vectorstore.VectorStore import PersistentFAISSStore
 
-
 class ChatOllamaRAGPipeline:
     def __init__(
         self,
@@ -20,16 +19,15 @@ class ChatOllamaRAGPipeline:
     ):
         self.logger = logging.getLogger(__name__)
         if not self.logger.handlers:
-            logging.basicConfig(level=logging.INFO)
+            logging.basicConfig(filename='rag.log', level=logging.INFO)
 
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            length_function=len,
-            separators=["\n\n", "\n", " ", ""],
+            length_function=len
         )
 
-        self.embeddings = OllamaEmbeddings(model="embeddinggemma")
+        self.embeddings = OllamaEmbeddings(model="llama3")
         self.llm = ChatOllama(model=model, temperature=0.2)
         self.vectorstore = PersistentFAISSStore(self.embeddings)
 
@@ -60,7 +58,7 @@ class ChatOllamaRAGPipeline:
         
         retriever_docs = self.vectorstore.similarity_search(query, num_of_documents=num_of_documents)
         context = "\n\n".join(
-            f"[{i+1}] Source: {d.metadata.get('source')}\n{d.page_content}"
+            d.page_content
             for i, d in enumerate(retriever_docs)
         )
         prompt = (
